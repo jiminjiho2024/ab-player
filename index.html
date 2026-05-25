@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AB Loop Player</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f10;
+    --surface: #1a1a1d;
+    --surface2: #242428;
+    --border: rgba(255,255,255,0.07);
+    --accent: #d4a853;
+    --accent2: #e8c97a;
+    --text: #e8e6e0;
+    --muted: #6b6860;
+    --blue: #7ab8e8;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .wrap { width: 100%; max-width: 480px; }
+
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    opacity: 0.6;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tag::before { content:''; display:inline-block; width:18px; height:1px; background:var(--accent); }
+
+  .title-row {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Waveform / progress area */
+  .progress-area {
+    position: relative;
+    height: 48px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--surface2);
+  }
+  .progress-bg { position:absolute; inset:0; background: var(--surface2); }
+  .ab-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: rgba(212,168,83,0.13);
+    border-left: 1.5px solid var(--accent);
+    border-right: 1.5px solid var(--blue);
+    pointer-events: none;
+  }
+  .progress-played {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    background: rgba(212,168,83,0.22);
+    pointer-events: none;
+    transition: width 0.1s linear;
+  }
+  /* fake waveform bars */
+  .waveform {
+    position: absolute; inset: 0;
+    display: flex; align-items: center;
+    gap: 2px; padding: 6px 4px;
+    pointer-events: none;
+  }
+  .waveform span {
+    flex: 1;
+    border-radius: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+  .playhead {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: var(--text);
+    pointer-events: none;
+    transition: left 0.1s linear;
+  }
+  .ab-label {
+    position: absolute;
+    top: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+  .ab-label.a { background: var(--accent); color: #0f0f10; }
+  .ab-label.b { background: var(--blue); color: #0f0f10; }
+
+  /* time row */
+  .time-row {
+    display: flex; justify-content: space-between;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .time-row .ab-span { color: var(--accent); }
+
+  /* main controls */
+  .main-ctrl {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px;
+  }
+  .btn-play {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--accent); border: none;
+    color: #0f0f10; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-play:hover { background: var(--accent2); }
+  .btn-play:active { transform: scale(0.95); }
+
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #2e2e33; border-color: rgba(255,255,255,0.14); }
+  .btn:active { transform: scale(0.97); }
+  .btn.a-btn { border-color: rgba(212,168,83,0.35); color: var(--accent); }
+  .btn.a-btn:hover { background: rgba(212,168,83,0.1); border-color: var(--accent); }
+  .btn.a-btn.set { background: rgba(212,168,83,0.12); border-color: var(--accent); }
+  .btn.b-btn { border-color: rgba(122,184,232,0.35); color: var(--blue); }
+  .btn.b-btn:hover { background: rgba(122,184,232,0.1); border-color: var(--blue); }
+  .btn.b-btn.set { background: rgba(122,184,232,0.12); border-color: var(--blue); }
+  .spacer { flex: 1; }
+  .btn.reset { color: var(--muted); font-size: 11px; border-color: transparent; }
+
+  /* bottom row */
+  .bottom-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .group-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-right: 2px;
+  }
+  .seg-btns {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .seg {
+    background: var(--surface2);
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 5px 9px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .seg:last-child { border-right: none; }
+  .seg:hover { background: #2e2e33; color: var(--text); }
+  .seg.on { background: rgba(212,168,83,0.12); color: var(--accent); }
+
+  .loop-pill {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 5px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface2);
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+  }
+  .loop-pill.active {
+    color: var(--accent);
+    border-color: rgba(212,168,83,0.4);
+    background: rgba(212,168,83,0.08);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">ab loop player</div>
+  <div class="title-row">Romantic Movies for Tuesday Night</div>
+
+  <!-- Progress / waveform -->
+  <div class="progress-area" id="prog" onclick="seek(event)">
+    <div class="progress-bg"></div>
+    <div class="progress-played" id="played"></div>
+    <div class="ab-fill" id="ab-fill" style="display:none"></div>
+    <div class="waveform" id="waveform"></div>
+    <div class="playhead" id="playhead" style="left:0"></div>
+    <div class="ab-label a" id="lbl-a" style="display:none">A</div>
+    <div class="ab-label b" id="lbl-b" style="display:none">B</div>
+  </div>
+
+  <!-- Time -->
+  <div class="time-row">
+    <span id="t-cur">0:00</span>
+    <span class="ab-span" id="t-ab" style="opacity:0">A 0:00 → B 0:00</span>
+    <span id="t-dur">-:--</span>
+  </div>
+
+  <!-- Main controls -->
+  <div class="main-ctrl">
+    <button class="btn-play" id="btn-play" onclick="togglePlay()">▶</button>
+    <button class="btn a-btn" id="btn-a" onclick="setA()">A 지점</button>
+    <button class="btn b-btn" id="btn-b" onclick="setB()">B 지점</button>
+    <div class="spacer"></div>
+    <button class="btn reset" onclick="resetAB()">초기화</button>
+  </div>
+
+  <!-- Speed & Repeat -->
+  <div class="bottom-row">
+    <span class="group-label">속도</span>
+    <div class="seg-btns" id="speed-grp">
+      <button class="seg" onclick="setSpeed(0.5,this)">0.5×</button>
+      <button class="seg" onclick="setSpeed(0.75,this)">0.75×</button>
+      <button class="seg on" onclick="setSpeed(1,this)">1×</button>
+      <button class="seg" onclick="setSpeed(1.25,this)">1.25×</button>
+    </div>
+    <span class="group-label" style="margin-left:6px">반복</span>
+    <div class="seg-btns" id="rep-grp">
+      <button class="seg on" onclick="setRep(0,this)">∞</button>
+      <button class="seg" onclick="setRep(3,this)">3회</button>
+      <button class="seg" onclick="setRep(5,this)">5회</button>
+      <button class="seg" onclick="setRep(10,this)">10회</button>
+    </div>
+    <div class="loop-pill" id="pill">⟳ 대기</div>
+  </div>
+</div>
+
+<audio id="audio" crossorigin="anonymous"
+  src="https://drive.google.com/uc?export=open&id=1-qScs6ohq-o2laewFFKjx_pH5wAXvu70">
+</audio>
+
+<script>
+var audio = document.getElementById('audio');
+var ptA = null, ptB = null;
+var maxRep = 0, repCount = 0;
+var ticker;
+
+// Build fake waveform
+(function(){
+  var wf = document.getElementById('waveform');
+  for(var i=0;i<80;i++){
+    var s = document.createElement('span');
+    var h = 20 + Math.random()*60;
+    s.style.height = h + '%';
+    wf.appendChild(s);
+  }
+})();
+
+audio.addEventListener('loadedmetadata', function(){
+  document.getElementById('t-dur').textContent = fmt(audio.duration);
+  ticker = setInterval(tick, 100);
+});
+
+audio.addEventListener('play', function(){
+  document.getElementById('btn-play').textContent = '⏸';
+});
+audio.addEventListener('pause', function(){
+  document.getElementById('btn-play').textContent = '▶';
+});
+
+function tick(){
+  var t = audio.currentTime, d = audio.duration || 1;
+  var pct = t/d*100;
+  document.getElementById('played').style.width = pct+'%';
+  document.getElementById('playhead').style.left = pct+'%';
+  document.getElementById('t-cur').textContent = fmt(t);
+
+  // AB loop
+  if(ptA!==null && ptB!==null && !audio.paused){
+    if(t >= ptB - 0.15){
+      if(maxRep > 0){
+        repCount++;
+        updatePill();
+        if(repCount >= maxRep){
+          audio.pause();
+          audio.currentTime = ptA;
+          repCount = 0;
+          updatePill();
+          return;
+        }
+      }
+      audio.currentTime = ptA;
+    }
+  }
+}
+
+function togglePlay(){
+  if(audio.paused) audio.play();
+  else audio.pause();
+}
+
+function setA(){
+  ptA = audio.currentTime;
+  if(ptB !== null && ptA >= ptB) { ptB = null; clearB(); }
+  repCount = 0;
+  updateAB();
+  document.getElementById('btn-a').classList.add('set');
+}
+
+function setB(){
+  ptB = audio.currentTime;
+  if(ptA !== null && ptB <= ptA) { ptA = null; clearA(); }
+  repCount = 0;
+  updateAB();
+  document.getElementById('btn-b').classList.add('set');
+}
+
+function clearA(){ document.getElementById('btn-a').classList.remove('set'); document.getElementById('lbl-a').style.display='none'; }
+function clearB(){ document.getElementById('btn-b').classList.remove('set'); document.getElementById('lbl-b').style.display='none'; }
+
+function resetAB(){
+  ptA = null; ptB = null; repCount = 0;
+  clearA(); clearB();
+  document.getElementById('ab-fill').style.display='none';
+  document.getElementById('t-ab').style.opacity='0';
+  updatePill();
+}
+
+function updateAB(){
+  var d = audio.duration || 1;
+  if(ptA !== null){
+    var aPct = ptA/d*100;
+    var lA = document.getElementById('lbl-a');
+    lA.style.display='block';
+    lA.style.left = aPct+'%';
+  }
+  if(ptB !== null){
+    var bPct = ptB/d*100;
+    var lB = document.getElementById('lbl-b');
+    lB.style.display='block';
+    lB.style.left = 'calc('+bPct+'% - 14px)';
+  }
+  if(ptA !== null && ptB !== null){
+    var fill = document.getElementById('ab-fill');
+    fill.style.display='block';
+    fill.style.left = (ptA/d*100)+'%';
+    fill.style.width = ((ptB-ptA)/d*100)+'%';
+    var tab = document.getElementById('t-ab');
+    tab.style.opacity='1';
+    tab.textContent = 'A '+fmt(ptA)+' → B '+fmt(ptB);
+  }
+  updatePill();
+}
+
+function updatePill(){
+  var pill = document.getElementById('pill');
+  if(ptA!==null && ptB!==null){
+    pill.classList.add('active');
+    pill.textContent = maxRep===0 ? '⟳ 반복 중' : '⟳ '+repCount+' / '+maxRep+'회';
+  } else {
+    pill.classList.remove('active');
+    pill.textContent = '⟳ 대기';
+  }
+}
+
+function seek(e){
+  var rect = document.getElementById('prog').getBoundingClientRect();
+  var pct = (e.clientX - rect.left) / rect.width;
+  audio.currentTime = pct * (audio.duration || 0);
+}
+
+function setSpeed(s, btn){
+  audio.playbackRate = s;
+  document.querySelectorAll('#speed-grp .seg').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+}
+
+function setRep(n, btn){
+  maxRep = n; repCount = 0;
+  document.querySelectorAll('#rep-grp .seg').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  updatePill();
+}
+
+function fmt(s){
+  s = Math.floor(s||0);
+  var m = Math.floor(s/60), sec = s%60;
+  return m+':'+(sec<10?'0':'')+sec;
+}
+</script>
+</body>
+</html>
